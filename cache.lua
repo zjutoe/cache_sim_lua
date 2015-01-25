@@ -1,6 +1,8 @@
 local pairs = pairs
 local math = math
 local setmetatable = setmetatable
+local tostring = tostring
+local print = print
 
 module (...)
 
@@ -21,16 +23,15 @@ function _M:new (obj)
    
    obj.n_sets = obj.n_blks / obj.assoc
    -- least significant bit of block offset, i.e. 2, as addr[1:0] are left for 32 bits word
-   obj.blk_offset_lsb = math.log (obj.word_size) 
+   obj.blk_offset_lsb = math.log (obj.word_size) / math.log (2)
    -- most significant bit of block offset
-   obj.blk_offset_msb = obj.blk_offset_lsb + math.log (obj.blk_size)
+   obj.blk_offset_msb = obj.blk_offset_lsb + math.log (obj.blk_size) / math.log (2)
    -- least and most significant bit of index
    obj.addr_index_lsb = obj.blk_offset_msb + 1
-   obj.addr_index_msb = obj.addr_index_lsb + math.log (obj.n_sets)
+   obj.addr_index_msb = obj.addr_index_lsb + math.log (obj.n_sets) / math.log (2)
    -- least and most significant bit of tag
    obj.addr_tag_lsb = obj.addr_index_msb + 1
-   obj.addr_tag_msb = obj.word_size * 8 - 1
-   
+   obj.addr_tag_msb = obj.word_size * 8 - 1   
 
    return obj
 end
@@ -47,10 +48,10 @@ function _M:write (addr)
    end
 
    local address = tostring (addr)
-   print(addr, address)
+   print('address:', address)
    local addr_index = address:sub (self.addr_index_msb, self.addr_index_lsb)
    local blk_offset = address:sub (self.blk_offset_msb, self.blk_offset_lsb)
 
-   print (addr_index, blk_offset)
+   print (addr, addr_index, blk_offset)
 end
 
