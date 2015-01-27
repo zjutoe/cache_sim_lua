@@ -10,9 +10,9 @@ local cache = require "cache"
 
 local L1 = cache:new{
    name = "L1",			-- L1 of 8KB
-   word_size = 4,		-- word size
-   blk_size = 64,		-- block size
-   n_blks = 128,		-- n_blks
+   word_size = 4,		-- word size in bytes
+   blk_size = 64,		-- block size in bytes, 2^6
+   n_blks = 128,		-- n_blks, 2^7
    assoc = 4,			-- assoc
    hit_time = 1,		-- hit_time
    write_time = 4,		-- write_time
