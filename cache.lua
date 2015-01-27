@@ -2,7 +2,10 @@ local pairs = pairs
 local math = math
 local setmetatable = setmetatable
 local tostring = tostring
+local tonumber = tonumber
 local print = print
+local string = string
+local bit = require("bit")
 
 module (...)
 
@@ -36,6 +39,20 @@ function _M:new (obj)
    return obj
 end
 
+function bit_segment(v, msb, lsb)
+   return bit.rshift(bit.lshift(v, 32 - msb), msb + lsb)
+end
+
+function _M:parse_address(addr)
+   local tag, index, offset
+
+   tag = bit_segment(addr, self.addr_tag_msb, self.addr_tag_lsb)
+   index = bit_segment(addr, self.addr_index_msb, self.addr_index_lsb)
+   offset = bit_segment(addr, self.blk_offset_msb, self.blk_offset_lsb)
+
+   return tag, index, offset
+end
+
 function _M:read (addr)
 
 end
@@ -47,11 +64,11 @@ function _M:write (addr)
       return true
    end
 
-   local address = tostring (addr)
-   print('address:', address)
-   local addr_index = address:sub (self.addr_index_msb, self.addr_index_lsb)
-   local blk_offset = address:sub (self.blk_offset_msb, self.blk_offset_lsb)
+   --local address = tonumber(addr, 16)
+   print(string.format('addr:%x', addr))
 
-   print (addr, addr_index, blk_offset)
+   local tag, index, offset = self:parse_address(addr)
+   print (string.format("%x %x %x", tag, index, offset))
+
 end
 

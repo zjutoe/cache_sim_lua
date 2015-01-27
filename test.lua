@@ -53,6 +53,6 @@ for line in f:lines() do
    local rw, addr, cid = string.match(line, "(%a) 0x(%x+) (%d)")
    -- print(rw, addr, cid)
    -- if rw == 'W' then
-   L1:write(addr)
+   L1:write(tonumber(addr, 16))
    -- end
 end
