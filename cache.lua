@@ -44,6 +44,7 @@ function _M:new (obj)
 
    obj._sets = {}
    obj._tags = {}
+   obj._clk = 0
 
    obj.n_sets = obj.n_blks / obj.assoc
 
@@ -80,16 +81,28 @@ function _M:offset(addr)
    return bit.band(addr, self.offset_mask)
 end
 
-function _M:read (addr)
+function _M:write_block(blk, offset, tag, val, need_wb)
+   blk.tag = tag
+   blk.atime = self.clk
+   -- TODO to read this block from next level of cache; and before
+   -- that, if need_wb is set, should write back dirty data
+   blk.dirty = true
+   blk[offset] = val
+end
 
+function _M:read_block(blk, offset, tag, val, need_wb)
+   -- if need_wb is set, should write back dirty data
+   blk.atime = self.clk
 end
 
 -- return: hit or not
-function _M:write (addr, val)
+function _M:read_write(is_write, addr, val)
    -- this is the MEM, will always hit
    if not self.next_level then
       return true
    end
+
+   local hit = false
 
    local tag, index, offset = self:tag(addr), self:index(addr), self:offset(addr)
    logd(string.format("%x %x %x", tag, index, offset))
@@ -99,12 +112,70 @@ function _M:write (addr, val)
 
    local set = sets[index]
    if set then
-      for i, blk in ipairs(set) do
+      local i = 0
+      for _, blk in pairs(set) do
+	 i = i + 1
 	 if blk.tag == tag then	-- a hit
-	    blk[offset] = val
+	    hit = true
+	    if is_write then
+	       self.write_hit = self.write_hit + 1 
+	       _M:write_block(blk, offset, tag, val, false)
+	    else
+	       self.read_hit = self.read_hit + 1 
+	       _M:read_block(blk, offset, tag, val, false)
+	    end
+	    break
 	 end
       end
-   end
-   
-end
+      if not hit then		-- a miss
+	 if is_write then
+	    self.write_miss = self.write_miss + 1
+	 else
+	    self.read_hit = self.read_hit + 1 
+	 end
 
+	 if i < self.assoc then -- set not full yet
+	    for j = 0, self.assoc - 1 do
+	       if not set[j] then 
+		  set[j] = {}
+		  if is_write then
+		     _M:write_block(set[j], offset, tag, val, false)
+		  else
+		     _M:read_block(set[j], offset, tag, val, false)
+		  end
+		  break
+	       end
+	    end
+	 else			-- set is full, need to find a victim
+	    local access_time = self.clk
+	    local vict = 0
+	    -- to find the vict with smallest access time, i.e. least
+	    -- recently used
+	    for j = 0, self.assoc - 1 do
+	       if access_time > set[j].atime then
+		  access_time = set[j].atime 
+		  vict = j
+	       end
+	    end
+	    -- NOTE: should evict the victim if it contains dirty data
+	    if is_write then
+	       _M:write_block(set[vict], offset, tag, val, set[vict].dirty)
+	    else
+	       _M:read_block(set[vict], offset, tag, val, set[vict].dirty)
+	    end
+	 end
+      end
+   else				-- this set is never accessed before
+      sets[index] = {}		-- new set
+      sets[index][0] = {}	-- new block
+      if is_write then
+	 self.write_miss = self.write_miss + 1
+	 _M:write_block(sets[index][0], offset, tag, val, false)
+      else
+	 self.read_miss = self.read_miss + 1
+	 _M:read_block(sets[index][0], offset, tag, val, false)
+      end
+   end   
+
+   return hit
+end
