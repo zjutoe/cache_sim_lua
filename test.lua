@@ -19,23 +19,6 @@ local MEM = cache:new{
    write_back = true,		-- write_back
    next_level = nil}		-- next_level
 
--- print(L1.name)
--- print(   L1.word_size )
--- print(   L1.blk_size )
--- print(   L1.n_blks )
--- print(   L1.assoc )
--- print(   L1.hit_time )
--- print(   L1.write_time )
--- print(   L1.write_back )
--- print(   L1.next_level )
-
--- print(L1.n_sets)
--- print(L1.blk_offset_lsb)
--- print(L1.blk_offset_msb)
--- print(L1.addr_index_lsb)
--- print(L1.addr_index_msb)
--- print(L1.addr_tag_lsb)
--- print(L1.addr_tag_msb)
 
 local BUFSIZE = 2^8		-- 32K
 local f = io.input(arg[1])	-- open input file

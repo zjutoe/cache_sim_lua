@@ -69,13 +69,13 @@ function _M:new (obj)
    obj.n_sets = obj.n_blks / obj.assoc
 
    offset_lsb = math.log (obj.word_size) / math.log (2)
-   offset_msb = obj.offset_lsb + math.log (obj.n_sets) / math.log (2)
+   offset_msb = obj.offset_lsb + math.log (obj.blk_size) / math.log (2) - 1
    logd('offset:', offset_msb, offset_lsb)
 
    obj.offset_mask = bit_mask(offset_msb, offset_lsb)
 
    index_lsb = offset_msb + 1
-   index_msb = index_lsb + math.log (obj.n_sets) / math.log (2)
+   index_msb = index_lsb + math.log (obj.n_sets) / math.log (2) - 1
    logd('index:', index_msb, index_lsb)
    obj.index_mask = bit_mask(index_msb, index_lsb)
 
