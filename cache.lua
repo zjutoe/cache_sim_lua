@@ -10,14 +10,14 @@ local bit = require("bit")
 module (...)
 
 function logd(...)
-   -- print(...)
+   print(...)
 end
 
 function bit_mask(msb, lsb)	
    if msb <= lsb then return end
 
    local t = 0xffffffff
-   if msb < 32 then
+   if msb < 31 then
       t = bit.lshift(0xffffffff, msb + 1) 
       t = bit.bnot(t)			  
    end
@@ -26,6 +26,30 @@ function bit_mask(msb, lsb)
    return bit.band(t, s)	
 end
 
+name = "MEM"			-- example cache of 8KB
+word_size = 4			-- word size in bytes
+blk_size = 64			-- block size in bytes, 2^6
+n_blks = 128			-- n_blks, 2^7
+assoc = 4			-- assoc
+hit_time = 1			-- hit_time
+write_time = 4			-- write_time
+-- write_back = true		-- write_back
+next_level = nil
+
+read_miss = 0
+read_hit = 0
+write_miss = 0
+write_hit = 0
+write_back_cnt = 0
+
+read_hit_delay = 1
+write_hit_delay = 1
+read_miss_delay = 5
+write_miss_delay = 5
+
+_sets = {}
+_tags = {}
+_clk = 0
 
 -- name, 
 -- word_size, 
@@ -41,10 +65,6 @@ function _M:new (obj)
    obj = obj or {}
    setmetatable(obj, self)
    self.__index = self
-
-   obj._sets = {}
-   obj._tags = {}
-   obj._clk = 0
 
    obj.n_sets = obj.n_blks / obj.assoc
 
@@ -84,6 +104,7 @@ end
 function _M:write_block(blk, offset, tag, val, need_wb)
    blk.tag = tag
    blk.atime = self.clk
+
    -- TODO to read this block from next level of cache; and before
    -- that, if need_wb is set, should write back dirty data
    blk.dirty = true
@@ -96,9 +117,9 @@ function _M:read_block(blk, offset, tag, val, need_wb)
 end
 
 function _M:search_block(tag, index)
-   local hit = false
    local block
-   local write_back = false
+   local hit = false
+   local write_back_addr = nil
 
    local sets = self._sets
 
@@ -124,8 +145,7 @@ function _M:search_block(tag, index)
 	       end
 	    end
 	    
-	 else			-- if i < self.assoc
-	    -- set is full, need to find a victim
+	 else			-- set is full, need to find a victim
 	    local access_time = self.clk
 	    local vict = 0
 	    -- to find the vict with smallest access time, i.e. least
@@ -136,77 +156,76 @@ function _M:search_block(tag, index)
 		  vict = j
 	       end
 	    end
-
-	    -- to evict
-	    self:write_back(set[vict])
-
+	    
 	    block = set[vict]
-	    write_back = true
+	    write_back_addr = bit.bor(block.tag, index)
+	    self.write_back_cnt = self.write_back_cnt + 1
 	 end			-- if i < self.assoc
+
+	 block.tag = tag
       end      			-- if not hit
 
-   else				-- if set 
-      -- this set is never accessed before
+   else				-- this set is never accessed before
       sets[index] = {}		-- new set
       sets[index][0] = {}	-- new block
       block = sets[index][0]
+      block.tag = tag
    end				-- if set
 
    block.atime = self.clk
-   return block, hit, write_back
+   return block, hit, write_back_addr
 end
 
 function _M:read(addr)
-
    local tag, index, offset = self:tag(addr), self:index(addr), self:offset(addr)
-   logd(string.format("%x %x %x", tag, index, offset))
+   logd(string.format("R: %x %x %x", tag, index, offset))
 
-   local blk, hit, write_back = _M:search_block(tag, index)
-   local val, delay
+   local delay = 0
+   local blk, hit, write_back_addr = self:search_block(tag, index)
+   logd("R", hit and 'hit' or 'miss')
+
    if hit then
       self.read_hit = self.read_hit + 1
-      val, delay = blk[offset], self.read_hit_delay
+      delay = delay + self.read_hit_delay
       
-   else
-      -- miss
+   else				-- miss
       self.read_miss = self.read_miss + 1
-      local next_level = self.next_level
-      local _val, _blk, _delay = next_level:read(addr)
-      val = _val
-      -- FIXME: load the block into the current cache. Is this the
-      -- corrent way?
-      for k, v in pairs(_blk) do
-	 blk[k] = v
+      if self.next_level then
+	 if write_back_addr then
+	    delay = delay + self.next_level:write(write_back_addr)
+	 end
+	 delay = delay + self.next_level:read(addr)
+	 delay = delay + self.read_miss_delay -- FIXME: what is self.miss_delay?
       end
-      delay = _delay + self.read_miss_delay -- FIXME: what is self.miss_delay?
-   end
+   end				-- if hit
 
-   return val, blk, delay
+   return delay
 end
 
 function _M:write(addr, val)
    local tag, index, offset = self:tag(addr), self:index(addr), self:offset(addr)
-   logd(string.format("%x %x %x", tag, index, offset))
+   logd(string.format("W: %x %x %x", tag, index, offset))
 
-   local blk, hit, write_back = _M:search_block(tag, index)
-   local delay
+   local blk, hit, write_back_addr = self:search_block(tag, index)
+   logd("W", hit and 'hit' or 'miss')
+
+   local delay = 0
    if hit then
       self.write_hit = self.write_hit + 1
-      blk[offset] = val
-      delay = self.write_hit_delay
-   else				-- if hit
-      -- miss
-      self.write_miss = self.write_miss + 1
-      local _val, _blk, _delay = self.next_level:read(addr)
-      -- FIXME: load the block into the current cache. Is this the
-      -- corrent way?
-      for k, v in pairs(_blk) do
-	 blk[k] = v
-      end
-      blk[offset] = val
-      delay = self.write_miss_delay + _delay
-   end
+      delay = delay + self.write_hit_delay
 
-   return blk, delay
+   else				-- miss
+      self.write_miss = self.write_miss + 1
+
+      if self.next_level then
+	 if write_back_addr then
+	    delay = delay + self.next_level:write(write_back_addr)
+	 end
+	 delay = delay + self.next_level:read(addr)
+	 delay = delay + self.write_miss_delay
+      end
+   end				-- if hit
+
+   return delay
 end
 
