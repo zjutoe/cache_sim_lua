@@ -90,8 +90,8 @@ function _M:new (obj)
    logd(obj.name .. 'tag:', tag_msb, tag_lsb)
    obj.tag_mask = bit_mask(tag_msb, tag_lsb)
 
-   -- logd(string.format('%s tag:%x index:%x offset:%x', 
-   -- 		      obj.name, obj.tag_mask, obj.index_mask, obj.offset_mask))
+   logd(string.format('%s tag:%x index:%x offset:%x', 
+   		      obj.name, obj.tag_mask, obj.index_mask, obj.offset_mask))
 
    return obj
 end
@@ -110,7 +110,7 @@ end
 
 function _M:write_block(blk, offset, tag, val, need_wb)
    blk.tag = tag
-   blk.atime = self.clk
+   blk.atime = self._clk
 
    -- TODO to read this block from next level of cache; and before
    -- that, if need_wb is set, should write back dirty data
@@ -120,11 +120,11 @@ end
 
 function _M:read_block(blk, offset, tag, val, need_wb)
    -- if need_wb is set, should write back dirty data
-   blk.atime = self.clk
+   blk.atime = self._clk
 end
 
 function _M:search_block(tag, index)
-   logd(self.name..' S', tag, index)
+   -- logd(self.name..' S', tag, index)
 
    local block
    local hit = false
@@ -155,7 +155,7 @@ function _M:search_block(tag, index)
 	    end
 	    
 	 else			-- set is full, need to find a victim
-	    local access_time = self.clk
+	    local access_time = self._clk
 	    local vict = 0
 	    -- to find the vict with smallest access time, i.e. least
 	    -- recently used
@@ -181,7 +181,7 @@ function _M:search_block(tag, index)
       block.tag = tag
    end				-- if set
 
-   block.atime = self.clk
+   block.atime = self._clk
    return block, hit, write_back_addr
 end
 
@@ -202,17 +202,16 @@ function _M:read(addr)
       delay = delay + self.read_miss_delay
 
       if self.next_level then
-	 logd('LN' .. __LINE__())
 	 if write_back_addr then
-	    logd('LN' .. __LINE__())
+	    logd(self.name..'WB: ', write_back_addr)
 	    delay = delay + self.next_level:write(write_back_addr)
 	 end
-	 logd('LN' .. __LINE__())
 	 delay = delay + self.next_level:read(addr)
 	 delay = delay + self.read_miss_delay -- FIXME: what is self.miss_delay?
       end
    end				-- if hit
 
+   self._clk = self._clk + delay
    return delay
 end
 
@@ -231,18 +230,17 @@ function _M:write(addr, val)
    else				-- miss
       self.write_miss = self.write_miss + 1
       delay = delay + self.write_miss_delay
-      logd('LN' .. __LINE__())
       if self.next_level then
 	 if write_back_addr then
-	    logd('LN' .. __LINE__())
+	    logd(self.name..'WB: ', write_back_addr)
 	    delay = delay + self.next_level:write(write_back_addr)
 	 end
-	 logd('LN' .. __LINE__())
 	 delay = delay + self.next_level:read(addr)
 	 delay = delay + self.write_miss_delay
       end
    end				-- if hit
 
+   self._clk = self._clk + delay
    return delay
 end
 
