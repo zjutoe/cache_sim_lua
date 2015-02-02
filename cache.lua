@@ -6,12 +6,16 @@ local tonumber = tonumber
 local print = print
 local string = string
 local bit = require("bit")
+local debug = debug
 
 module (...)
 
 function logd(...)
    print(...)
 end
+function __FILE__() return debug.getinfo(2,'S').source end
+function __LINE__() return debug.getinfo(2, 'l').currentline end
+
 
 function bit_mask(msb, lsb)	
    if msb <= lsb then return end
@@ -47,9 +51,6 @@ write_hit_delay = 1
 read_miss_delay = 5
 write_miss_delay = 5
 
-_sets = {}
-_tags = {}
-_clk = 0
 
 -- name, 
 -- word_size, 
@@ -66,25 +67,31 @@ function _M:new (obj)
    setmetatable(obj, self)
    self.__index = self
 
+
+   obj._sets = {}
+   obj._tags = {}
+   obj._clk = 0
+
    obj.n_sets = obj.n_blks / obj.assoc
 
    offset_lsb = math.log (obj.word_size) / math.log (2)
    offset_msb = obj.offset_lsb + math.log (obj.blk_size) / math.log (2) - 1
-   logd('offset:', offset_msb, offset_lsb)
+   logd(obj.name .. ' offset:', offset_msb, offset_lsb)
 
    obj.offset_mask = bit_mask(offset_msb, offset_lsb)
 
    index_lsb = offset_msb + 1
    index_msb = index_lsb + math.log (obj.n_sets) / math.log (2) - 1
-   logd('index:', index_msb, index_lsb)
+   logd(obj.name .. ' index:', index_msb, index_lsb)
    obj.index_mask = bit_mask(index_msb, index_lsb)
 
    tag_lsb = index_msb + 1
    tag_msb = obj.word_size * 8 - 1   
-   logd('tag:', tag_msb, tag_lsb)
+   logd(obj.name .. 'tag:', tag_msb, tag_lsb)
    obj.tag_mask = bit_mask(tag_msb, tag_lsb)
 
-   logd(string.format('tag:%x index:%x offset:%x', obj.tag_mask, obj.index_mask, obj.offset_mask))
+   -- logd(string.format('%s tag:%x index:%x offset:%x', 
+   -- 		      obj.name, obj.tag_mask, obj.index_mask, obj.offset_mask))
 
    return obj
 end
@@ -117,6 +124,8 @@ function _M:read_block(blk, offset, tag, val, need_wb)
 end
 
 function _M:search_block(tag, index)
+   logd(self.name..' S', tag, index)
+
    local block
    local hit = false
    local write_back_addr = nil
@@ -178,11 +187,11 @@ end
 
 function _M:read(addr)
    local tag, index, offset = self:tag(addr), self:index(addr), self:offset(addr)
-   logd(string.format("R: %x %x %x", tag, index, offset))
 
    local delay = 0
    local blk, hit, write_back_addr = self:search_block(tag, index)
-   logd("R", hit and 'hit' or 'miss')
+   logd(string.format("%s R: %x %x %x %s", 
+		      self.name, tag, index, offset, hit and 'hit' or 'miss'))
 
    if hit then
       self.read_hit = self.read_hit + 1
@@ -193,9 +202,12 @@ function _M:read(addr)
       delay = delay + self.read_miss_delay
 
       if self.next_level then
+	 logd('LN' .. __LINE__())
 	 if write_back_addr then
+	    logd('LN' .. __LINE__())
 	    delay = delay + self.next_level:write(write_back_addr)
 	 end
+	 logd('LN' .. __LINE__())
 	 delay = delay + self.next_level:read(addr)
 	 delay = delay + self.read_miss_delay -- FIXME: what is self.miss_delay?
       end
@@ -206,10 +218,10 @@ end
 
 function _M:write(addr, val)
    local tag, index, offset = self:tag(addr), self:index(addr), self:offset(addr)
-   logd(string.format("W: %x %x %x", tag, index, offset))
 
    local blk, hit, write_back_addr = self:search_block(tag, index)
-   logd("W", hit and 'hit' or 'miss')
+   logd(string.format("%s W: %x %x %x %s", 
+		      self.name, tag, index, offset, hit and 'hit' or 'miss'))
 
    local delay = 0
    if hit then
@@ -219,11 +231,13 @@ function _M:write(addr, val)
    else				-- miss
       self.write_miss = self.write_miss + 1
       delay = delay + self.write_miss_delay
-
+      logd('LN' .. __LINE__())
       if self.next_level then
 	 if write_back_addr then
+	    logd('LN' .. __LINE__())
 	    delay = delay + self.next_level:write(write_back_addr)
 	 end
+	 logd('LN' .. __LINE__())
 	 delay = delay + self.next_level:read(addr)
 	 delay = delay + self.write_miss_delay
       end

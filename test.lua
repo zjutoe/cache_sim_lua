@@ -14,10 +14,21 @@ local MEM = cache:new{
    blk_size = 64,		-- block size in bytes, 2^6
    n_blks = 128,		-- n_blks, 2^7
    assoc = 4,			-- assoc
-   hit_time = 1,		-- hit_time
-   write_time = 4,		-- write_time
+   hit_time = 4,		-- hit_time
+   write_time = 8,		-- write_time
    write_back = true,		-- write_back
    next_level = nil}		-- next_level
+
+local L2 = cache:new{
+   name = "L2",			-- L3 of 8KB
+   word_size = 4,		-- word size in bytes
+   blk_size = 64,		-- block size in bytes, 2^6
+   n_blks = 64,			-- n_blks, 2^6
+   assoc = 4,			-- assoc
+   hit_time = 1,		-- hit_time
+   write_time = 2,		-- write_time
+   write_back = true,		-- write_back
+   next_level = MEM}		-- next_level
 
 
 local BUFSIZE = 2^8		-- 32K
@@ -37,9 +48,9 @@ for line in f:lines() do
    local delay = 0
    -- print(rw, addr, cid)
    if rw == 'W' then
-      delay = MEM:write(tonumber(addr, 16))
+      delay = L2:write(tonumber(addr, 16))
    elseif rw == 'R' then
-      delay = MEM:read(tonumber(addr, 16))
+      delay = L2:read(tonumber(addr, 16))
    end
    print('delay', delay)
 end
