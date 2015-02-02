@@ -34,10 +34,12 @@ local f = io.input(arg[1])	-- open input file
 
 for line in f:lines() do
    local rw, addr, cid = string.match(line, "(%a) 0x(%x+) (%d)")
+   local delay = 0
    -- print(rw, addr, cid)
    if rw == 'W' then
-      MEM:write(tonumber(addr, 16))
+      delay = MEM:write(tonumber(addr, 16))
    elseif rw == 'R' then
-      MEM:read(tonumber(addr, 16))
+      delay = MEM:read(tonumber(addr, 16))
    end
+   print('delay', delay)
 end

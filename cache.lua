@@ -190,6 +190,8 @@ function _M:read(addr)
       
    else				-- miss
       self.read_miss = self.read_miss + 1
+      delay = delay + self.read_miss_delay
+
       if self.next_level then
 	 if write_back_addr then
 	    delay = delay + self.next_level:write(write_back_addr)
@@ -216,6 +218,7 @@ function _M:write(addr, val)
 
    else				-- miss
       self.write_miss = self.write_miss + 1
+      delay = delay + self.write_miss_delay
 
       if self.next_level then
 	 if write_back_addr then
