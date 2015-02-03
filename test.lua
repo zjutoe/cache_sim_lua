@@ -8,7 +8,7 @@ function __LINE__() return debug.getinfo(2, 'l').currentline end
 
 local cache = require "cache"
 
-local MEM = cache:new{
+local L3 = cache:new{
    name = "L3",			-- L3 of 8KB
    word_size = 4,		-- word size in bytes
    blk_size = 64,		-- block size in bytes, 2^6
@@ -28,7 +28,7 @@ local L2 = cache:new{
    hit_time = 1,		-- hit_time
    write_time = 2,		-- write_time
    write_back = true,		-- write_back
-   next_level = MEM}		-- next_level
+   next_level = L3}		-- next_level
 
 
 local BUFSIZE = 2^8		-- 32K
@@ -54,3 +54,12 @@ for line in f:lines() do
    end
    print('delay', delay)
 end
+
+function summarize(c) 
+   print(c.name)
+   print("read hit/miss:", c.read_hit, c.read_miss)
+   print("write hit/miss:", c.write_hit, c.write_miss)
+end
+
+summarize(L2)
+summarize(L3)
