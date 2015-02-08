@@ -1,4 +1,5 @@
 local pairs = pairs
+local unpack = unpack
 local math = math
 local setmetatable = setmetatable
 local tostring = tostring
@@ -35,8 +36,6 @@ word_size = 4			-- word size in bytes
 blk_size = 64			-- block size in bytes, 2^6
 n_blks = 128			-- n_blks, 2^7
 assoc = 4			-- assoc
-hit_time = 1			-- hit_time
-write_time = 4			-- write_time
 -- write_back = true		-- write_back
 next_level = nil
 
@@ -48,8 +47,9 @@ write_back_cnt = 0
 
 read_hit_delay = 1
 write_hit_delay = 1
-read_miss_delay = 5
-write_miss_delay = 5
+-- read_miss_delay = 5
+-- write_miss_delay = 5
+coherent_delay = 1
 
 
 -- name, 
@@ -108,6 +108,10 @@ function _M:offset(addr)
    return bit.band(addr, self.offset_mask)
 end
 
+function _M:set_peers(peers)
+   self.peers = peers
+end
+
 function _M:write_block(blk, offset, tag, val, need_wb)
    blk.tag = tag
    blk.atime = self._clk
@@ -123,12 +127,11 @@ function _M:read_block(blk, offset, tag, val, need_wb)
    blk.atime = self._clk
 end
 
+-- TODO: optimize by reduce {} number
 function _M:search_block(tag, index)
    -- logd(self.name..' S', tag, index)
 
-   local block
-   local hit = false
-   local write_back_addr = nil
+   local block = nil
 
    local sets = self._sets
 
@@ -138,18 +141,18 @@ function _M:search_block(tag, index)
       for _, blk in pairs(set) do
 	 i = i + 1
 	 if blk.tag == tag then	-- a hit
-	    hit = true
 	    block = blk
 	    break
 	 end
       end
 
-      if not hit then		-- a miss
+      if not block then		-- a miss
 	 if i < self.assoc then -- set not full yet
 	    for j = 0, self.assoc - 1 do
 	       if not set[j] then 
 		  set[j] = {}
-		  block = set[j]
+		  block = set[j]		  
+		  block.status = 'I'
 		  break
 	       end
 	    end
@@ -167,49 +170,60 @@ function _M:search_block(tag, index)
 	    end
 	    
 	    block = set[vict]
-	    write_back_addr = bit.bor(block.tag, index)
-	    self.write_back_cnt = self.write_back_cnt + 1
+
+	    -- write_back_addr = bit.bor(block.tag, index)
+	    -- self.write_back_cnt = self.write_back_cnt + 1
 	 end			-- if i < self.assoc
 
-	 block.tag = tag
-      end      			-- if not hit
+      end      			-- if not block
 
    else				-- this set is never accessed before
       sets[index] = {}		-- new set
       sets[index][0] = {}	-- new block
       block = sets[index][0]
-      block.tag = tag
+      block.status = 'I'	-- invalid
    end				-- if set
 
    block.atime = self._clk
-   return block, hit, write_back_addr
+   return block
 end
 
 function _M:read(addr)
    local tag, index, offset = self:tag(addr), self:index(addr), self:offset(addr)
-
-   local delay = 0
-   local blk, hit, write_back_addr = self:search_block(tag, index)
    logd(string.format("%s R: %x %x %x %s", 
-		      self.name, tag, index, offset, hit and 'hit' or 'miss'))
+		      self.name, tag, index, offset))
 
-   if hit then
-      self.read_hit = self.read_hit + 1
-      delay = delay + self.read_hit_delay
-      
-   else				-- miss
-      self.read_miss = self.read_miss + 1
-      delay = delay + self.read_miss_delay
+   local delay = self.read_hit_delay
+   local blk = self:search_block(tag, index)
 
-      if self.next_level then
-	 if write_back_addr then
-	    logd(self.name..'WB: ', write_back_addr)
+   if not blk.tag or blk.tag ~= tag then -- a miss
+      if blk.status and  blk.status == 'M' then	-- dirty block, need to write back to next level cache
+	 if self.next_level then
+	    local write_back_addr = bit.bor(blk.tag, index)
 	    delay = delay + self.next_level:write(write_back_addr)
 	 end
-	 delay = delay + self.next_level:read(addr)
-	 delay = delay + self.read_miss_delay -- FIXME: what is self.miss_delay?
       end
-   end				-- if hit
+
+      local peer_response = false
+      for _, c in pairs(self.peers) do
+	 local b, d = c:msi_read_response(tag, index)
+	 if b then		-- a peer cache response with a valid block
+	    delay = delay + d
+	    peer_response = true
+	    break
+	 end
+      end			-- for 
+      if not peer_response then	-- no peer cache responses, resort to next level cache
+	 if self.next_level then
+	    delay = delay + self.next_level:read(addr)
+	 end
+      end
+      blk.tag = tag
+      blk.status = 'S'
+
+   else				-- a hit
+      self.read_hit = self.read_hit + 1
+   end
 
    self._clk = self._clk + delay
    return delay
@@ -217,30 +231,106 @@ end
 
 function _M:write(addr, val)
    local tag, index, offset = self:tag(addr), self:index(addr), self:offset(addr)
-
-   local blk, hit, write_back_addr = self:search_block(tag, index)
    logd(string.format("%s W: %x %x %x %s", 
-		      self.name, tag, index, offset, hit and 'hit' or 'miss'))
+		      self.name, tag, index, offset))
 
-   local delay = 0
-   if hit then
-      self.write_hit = self.write_hit + 1
-      delay = delay + self.write_hit_delay
 
-   else				-- miss
+   local blk = self:search_block(tag, index)
+   local delay = self.write_hit_delay
+
+   if not blk.tag or blk.tag ~= tag then -- a miss
       self.write_miss = self.write_miss + 1
-      delay = delay + self.write_miss_delay
-      if self.next_level then
-	 if write_back_addr then
-	    logd(self.name..'WB: ', write_back_addr)
+      
+      if blk.status and  blk.status == 'M' then	-- dirty block, need to write back to next level cache
+	 if self.next_level then
+	    local write_back_addr = bit.bor(blk.tag, index)
 	    delay = delay + self.next_level:write(write_back_addr)
 	 end
-	 delay = delay + self.next_level:read(addr)
-	 delay = delay + self.write_miss_delay
       end
-   end				-- if hit
+
+      -- for blk.status == 'S' or 'I', just evict without writing back
+
+      local peer_response = false
+
+      for _, c in pairs(self.peers) do
+	 local b, d = c:msi_write_response(tag, index)
+	 if b then		-- a peer cache response with a valid block
+	    peer_response = true
+	 end
+      end -- for each peer cache
+      if not peer_response then	-- no peer cache responses, resort to next level cache
+	 if self.next_level then
+	    delay = delay + self.next_level:read(addr)
+	 end
+      else
+	 delay = delay + self.coherent_delay
+      end
+      blk.tag = tag
+
+   else -- a hit
+      self.write_hit = self.write_hit + 1
+
+      if blk.status ~= 'M' then	-- blk.status == 'S', need to invalidate peer blocks
+	 for _, c in pairs(self.peers) do
+	    local b, d = c:msi_write_response(tag, index)
+	 end -- for each peer cache
+      end      
+   end -- not blk.tag or blk.tag ~= tag
+
+   blk.status = 'M'
 
    self._clk = self._clk + delay
    return delay
 end
 
+function _M:msi_read_response(tag, index)
+   local delay = self.coherent_delay
+
+   local blk = nil
+   local set = self._sets[index]
+   if set then
+      for _, b in pairs(set) do
+	 if b.tag == tag then
+	    if b.status == 'M' then
+	       local write_back_addr = bit.bor(tag, index)
+	       delay = delay + self.next_level:write(write_back_addr)
+	       b.status = 'S'
+	       blk = b
+	    elseif b.status == 'S' then
+	       blk = b
+	    -- elseif b.status == 'I' then -- do nothing
+	    end -- b.status	    
+	    break
+	 end -- b.tag == tag
+      end -- for
+   end -- set
+
+   return blk, delay   
+end
+
+function _M:msi_write_response(tag, index)
+   local delay = self.coherent_delay
+
+   local blk = nil
+   local set = self._sets[index]
+   if set then
+      for _, b in pairs(set) do
+	 if b.tag == tag then
+	    if b.status == 'M' then
+	       local write_back_addr = bit.bor(tag, index)
+	       delay = delay + self.next_level:write(write_back_addr)
+	       b.status = 'I'
+	       blk = b
+	    elseif b.status == 'S' then
+	       b.status = 'I'
+	       blk = b
+	    -- elseif b.status == 'I' then -- do nothing
+	    end -- b.status	    
+
+	    break
+	 end -- b.tag == tag
+      end -- for each block of set
+   end -- set
+
+   return blk, delay   
+end
