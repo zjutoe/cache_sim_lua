@@ -11,12 +11,12 @@ local debug = debug
 
 module (...)
 
-function logd(...)
-   --print(...)
-end
 function __FILE__() return debug.getinfo(2,'S').source end
 function __LINE__() return debug.getinfo(2, 'l').currentline end
 
+function logd(...)
+   print(...)
+end
 
 function bit_mask(msb, lsb)	
    if msb <= lsb then return end
@@ -62,11 +62,11 @@ coherent_delay = 1
 -- write_back, 
 -- next_level
 function _M:new (obj)
+   logd('new')
 
    obj = obj or {}
    setmetatable(obj, self)
    self.__index = self
-
 
    obj._sets = {}
    obj._tags = {}
@@ -76,21 +76,21 @@ function _M:new (obj)
 
    offset_lsb = math.log (obj.word_size) / math.log (2)
    offset_msb = obj.offset_lsb + math.log (obj.blk_size) / math.log (2) - 1
-   logd(obj.name .. ' offset:', offset_msb, offset_lsb)
+   -- logd(' '..obj.name .. ' offset:', offset_msb, offset_lsb)
 
    obj.offset_mask = bit_mask(offset_msb, offset_lsb)
 
    index_lsb = offset_msb + 1
    index_msb = index_lsb + math.log (obj.n_sets) / math.log (2) - 1
-   logd(obj.name .. ' index:', index_msb, index_lsb)
+   -- logd(' '..obj.name .. ' index:', index_msb, index_lsb)
    obj.index_mask = bit_mask(index_msb, index_lsb)
 
    tag_lsb = index_msb + 1
    tag_msb = obj.word_size * 8 - 1   
-   logd(obj.name .. 'tag:', tag_msb, tag_lsb)
+   -- logd(' '..obj.name .. ' tag:', tag_msb, tag_lsb)
    obj.tag_mask = bit_mask(tag_msb, tag_lsb)
 
-   logd(string.format('%s tag:%x index:%x offset:%x', 
+   logd(string.format('  %s tag:%x index:%x offset:%x', 
    		      obj.name, obj.tag_mask, obj.index_mask, obj.offset_mask))
 
    return obj
@@ -190,7 +190,7 @@ end
 
 function _M:read(addr)
    local tag, index, offset = self:tag(addr), self:index(addr), self:offset(addr)
-   logd(string.format("%s R: %x %x %x %s", 
+   logd(string.format("%s R: %x %x %x", 
 		      self.name, tag, index, offset))
 
    local delay = self.read_hit_delay
@@ -204,20 +204,22 @@ function _M:read(addr)
 	 end
       end
 
-      local peer_response = false
-      for _, c in pairs(self.peers) do
-	 local b, d = c:msi_read_response(tag, index)
-	 if b then		-- a peer cache response with a valid block
-	    delay = delay + d
-	    peer_response = true
-	    break
+      if self.peers then
+	 local peer_response = false
+	 for _, c in pairs(self.peers) do
+	    local b, d = c:msi_read_response(tag, index)
+	    if b then		-- a peer cache response with a valid block
+	       delay = delay + d
+	       peer_response = true
+	       break
+	    end
+	 end			-- for 
+	 if not peer_response then	-- no peer cache responses, resort to next level cache
+	    if self.next_level then
+	       delay = delay + self.next_level:read(addr)
+	    end
 	 end
-      end			-- for 
-      if not peer_response then	-- no peer cache responses, resort to next level cache
-	 if self.next_level then
-	    delay = delay + self.next_level:read(addr)
-	 end
-      end
+      end -- if self.peers
       blk.tag = tag
       blk.status = 'S'
 
@@ -225,15 +227,16 @@ function _M:read(addr)
       self.read_hit = self.read_hit + 1
    end
 
+   logd(string.format("%s 0x%08x status: %s", self.name, blk.tag + index, blk.status))
+
    self._clk = self._clk + delay
    return delay
 end
 
 function _M:write(addr, val)
    local tag, index, offset = self:tag(addr), self:index(addr), self:offset(addr)
-   logd(string.format("%s W: %x %x %x %s", 
+   logd(string.format("%s W: %x %x %x", 
 		      self.name, tag, index, offset))
-
 
    local blk = self:search_block(tag, index)
    local delay = self.write_hit_delay
@@ -250,27 +253,29 @@ function _M:write(addr, val)
 
       -- for blk.status == 'S' or 'I', just evict without writing back
 
-      local peer_response = false
+      if self.peers then
+	 local peer_response = false
+	 for _, c in pairs(self.peers) do
+	    local b, d = c:msi_write_response(tag, index)
+	    if b then		-- a peer cache response with a valid block
+	       peer_response = true
+	    end
+	 end -- for each peer cache
+	 if not peer_response then	-- no peer cache responses, resort to next level cache
+	    if self.next_level then
+	       delay = delay + self.next_level:read(addr)
+	    end
+	 else
+	    delay = delay + self.coherent_delay
+	 end
+      end -- if self.peers
 
-      for _, c in pairs(self.peers) do
-	 local b, d = c:msi_write_response(tag, index)
-	 if b then		-- a peer cache response with a valid block
-	    peer_response = true
-	 end
-      end -- for each peer cache
-      if not peer_response then	-- no peer cache responses, resort to next level cache
-	 if self.next_level then
-	    delay = delay + self.next_level:read(addr)
-	 end
-      else
-	 delay = delay + self.coherent_delay
-      end
       blk.tag = tag
 
    else -- a hit
       self.write_hit = self.write_hit + 1
 
-      if blk.status ~= 'M' then	-- blk.status == 'S', need to invalidate peer blocks
+      if self.peers and blk.status ~= 'M' then -- blk.status == 'S', need to invalidate peer blocks
 	 for _, c in pairs(self.peers) do
 	    local b, d = c:msi_write_response(tag, index)
 	 end -- for each peer cache
@@ -278,6 +283,7 @@ function _M:write(addr, val)
    end -- not blk.tag or blk.tag ~= tag
 
    blk.status = 'M'
+   logd(string.format("%s 0x%08x status: %s", self.name, blk.tag + index, blk.status))
 
    self._clk = self._clk + delay
    return delay
@@ -305,6 +311,8 @@ function _M:msi_read_response(tag, index)
       end -- for
    end -- set
 
+   logd(string.format("%s msi_read_response 0x%08x status=%s",
+		      self.name, blk.tag, blk.status))
    return blk, delay   
 end
 
@@ -331,6 +339,11 @@ function _M:msi_write_response(tag, index)
 	 end -- b.tag == tag
       end -- for each block of set
    end -- set
+
+   if blk then
+      logd(string.format("%s msi_write_response 0x%08x status=%s",
+			 self.name, blk.tag, blk.status))
+   end
 
    return blk, delay   
 end

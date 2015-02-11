@@ -75,20 +75,23 @@ L1d:set_peers({L1a, L1b, L1c})
 
 local l1_cache_list = {L1a, L1b, L1c, L1d}
 
+
 local BUFSIZE = 2^8		-- 32K
 local f = io.input(arg[1])	-- open input file
 
 for line in f:lines() do
-   local rw, addr, cid = string.match(line, "(%a) 0x(%x+) (%d)")
-   local delay = 0
-   -- print(rw, addr, cid)
-   local L1 = l1_cache_list[cid]
-   if rw == 'W' then
-      delay = L1:write(tonumber(addr, 16))
-   elseif rw == 'R' then
-      delay = L1:read(tonumber(addr, 16))
+   if line:sub(1,2) ~= '--' then
+      local rw, addr, cid = string.match(line, "(%a) 0x(%x+) (%d)")
+      local delay = 0
+      -- print(rw, addr, cid)
+      local L1 = l1_cache_list[tonumber(cid)]
+      if rw == 'W' then
+	 delay = L1:write(tonumber(addr, 16))
+      elseif rw == 'R' then
+	 delay = L1:read(tonumber(addr, 16))
+      end
+      print('delay', delay)
    end
-   print('delay', delay)
 end
 
 function summarize(cache_list) 
