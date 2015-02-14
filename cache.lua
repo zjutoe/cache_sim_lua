@@ -312,8 +312,10 @@ function _M:msi_read_response(tag, index)
    end -- set
 
    logd(string.format("%s msi_read_response 0x%08x status=%s",
-		      self.name, blk.tag, blk.status))
-   return blk, delay   
+		      self.name, 
+		      blk and blk.tag or 0, 
+		      blk and blk.status or 'I'))
+   return blk, delay
 end
 
 function _M:msi_write_response(tag, index)

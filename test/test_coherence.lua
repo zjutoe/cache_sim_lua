@@ -6,7 +6,11 @@
 function __FILE__() return debug.getinfo(2,'S').source end
 function __LINE__() return debug.getinfo(2, 'l').currentline end
 
-local cache = require "cache"
+function logd(...)
+   print(...)
+end
+
+local cache = require "../cache"
 
 local L2 = cache:new{
    name = "L2",			-- L2 of 8KB
@@ -86,9 +90,13 @@ for line in f:lines() do
       -- print(rw, addr, cid)
       local L1 = l1_cache_list[tonumber(cid)]
       if rw == 'W' then
+      	 logd("---W----")
 	 delay = L1:write(tonumber(addr, 16))
+	 logd("---W----")
       elseif rw == 'R' then
+      	 logd("---R----")
 	 delay = L1:read(tonumber(addr, 16))
+	 logd("---R----")
       end
       print('delay', delay)
    end
