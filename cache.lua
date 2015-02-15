@@ -197,6 +197,7 @@ function _M:read(addr)
    local blk = self:search_block(tag, index)
 
    if not blk.tag or blk.tag ~= tag then -- a miss
+      self.read_miss = self.read_miss + 1
       if blk.status and  blk.status == 'M' then	-- dirty block, need to write back to next level cache
 	 if self.next_level then
 	    local write_back_addr = bit.bor(blk.tag, index)
