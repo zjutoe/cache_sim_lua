@@ -102,14 +102,21 @@ for line in f:lines() do
    end
 end
 
-function summarize(cache_list) 
+function summarize(cache_list)
+   local read_hit_total, read_miss_total, write_hit_total, write_miss_total = 0,0,0,0
    for _, c in pairs(cache_list) do
       print(c.name)
       print("read hit/miss:", c.read_hit, c.read_miss)
       print("write hit/miss:", c.write_hit, c.write_miss)
+      read_hit_total = read_hit_total + c.read_hit
+      read_miss_total = read_miss_total + c.read_miss
+      write_hit_total = write_hit_total + c.write_hit
+      write_miss_total = write_miss_total + c.write_miss
    end
+   print("Total read hit/miss:", read_hit_total, read_miss_total)
+   print("Total write hit/miss:", write_hit_total, write_miss_total)
 end
 
-l1_cache_list[#l1_cache_list + 1] = l2
+-- l1_cache_list[#l1_cache_list + 1] = l2
 summarize(l1_cache_list)
 
