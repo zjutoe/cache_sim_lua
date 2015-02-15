@@ -7,7 +7,7 @@ function __FILE__() return debug.getinfo(2,'S').source end
 function __LINE__() return debug.getinfo(2, 'l').currentline end
 
 function logd(...)
-   print(...)
+   -- print(...)
 end
 
 local cache = require "../cache"
@@ -98,7 +98,7 @@ for line in f:lines() do
 	 delay = L1:read(tonumber(addr, 16))
 	 logd("---R----")
       end
-      print('delay', delay)
+      logd('delay', delay)
    end
 end
 
@@ -110,5 +110,6 @@ function summarize(cache_list)
    end
 end
 
-summarize({unpack(l1_cache_list), l2})
+l1_cache_list[#l1_cache_list + 1] = l2
+summarize(l1_cache_list)
 
