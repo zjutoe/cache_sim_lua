@@ -10,7 +10,7 @@ function logd(...)
    -- print(...)
 end
 
-local cache = require "../cache"
+local cache = require "cache"
 
 local L2 = cache:new{
    name = "L2",			-- L2 of 8KB
