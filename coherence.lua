@@ -80,25 +80,38 @@ L1d:set_peers({L1a, L1b, L1c})
 local l1_cache_list = {L1a, L1b, L1c, L1d}
 
 function issue(iss)
+   local max_b_sz = 0
    for _, b in ipairs(iss) do
-      for i, line in ipairs(b) do
-	 local rw, addr, cid = string.match(line, "(%a) 0x(%x+) (%d)")
-	 -- logd(line, rw, addr, cid)
-	 local delay = 0
-	 -- print(rw, addr, cid)
-	 local L1 = l1_cache_list[tonumber(cid+1)]
-	 if rw == 'W' then
-	    logd("---W----")
-	    delay = L1:write(tonumber(addr, 16))
-	    logd("---W----")
-	 elseif rw == 'R' then
-	    logd("---R----")
-	    delay = L1:read(tonumber(addr, 16))
-	    logd("---R----")
+      if max_b_sz < #b then max_b_sz = #b end
+   end
+   
+   for i = 1, max_b_sz do
+      -- round robin with the cores, to simulate the parallel execution
+      for _, b in ipairs(iss) do
+	 line = b[i]
+	 if line then	 	-- if not nil
+	    local rw, addr, cid = string.match(line, "(%a) 0x(%x+) (%d)")
+	    logd (line, rw, addr, cid)
+	    local delay = 0
+	    -- print(rw, addr, cid)
+	    local L1 = l1_cache_list[tonumber(cid+1)]
+	    if rw == 'W' then
+	       logd("---W----")
+	       delay = L1:write(tonumber(addr, 16))
+	       logd("---W----")
+	    elseif rw == 'R' then
+	       logd("---R----")
+	       delay = L1:read(tonumber(addr, 16))
+	       logd("---R----")
+	    end
+	    logd('delay', delay)
 	 end
-	 logd('delay', delay)
       end
    end
+   -- for _, b in ipairs(iss) do
+   --    for i, line in ipairs(b) do
+   --    end
+   -- end
 end
 
 local BUFSIZE = 2^15		-- 32K
