@@ -80,27 +80,58 @@ L1d:set_peers({L1a, L1b, L1c})
 local l1_cache_list = {L1a, L1b, L1c, L1d}
 
 
-local BUFSIZE = 2^8		-- 32K
-local f = io.input(arg[1])	-- open input file
-
-for line in f:lines() do
-   if line:sub(1,2) ~= '--' then
-      local rw, addr, cid = string.match(line, "(%a) 0x(%x+) (%d)")
-      local delay = 0
-      -- print(rw, addr, cid)
-      local L1 = l1_cache_list[tonumber(cid)]
-      if rw == 'W' then
-      	 logd("---W----")
-	 delay = L1:write(tonumber(addr, 16))
-	 logd("---W----")
-      elseif rw == 'R' then
-      	 logd("---R----")
-	 delay = L1:read(tonumber(addr, 16))
-	 logd("---R----")
+function issue(iss)
+   for _, b in ipairs(iss) do
+      for i, line in ipairs(b) do
+	 local rw, addr, cid = string.match(line, "(%a) 0x(%x+) (%d)")
+	 -- logd(line, rw, addr, cid)
+	 local delay = 0
+	 -- print(rw, addr, cid)
+	 local L1 = l1_cache_list[tonumber(cid+1)]
+	 if rw == 'W' then
+	    logd("---W----")
+	    delay = L1:write(tonumber(addr, 16))
+	    logd("---W----")
+	 elseif rw == 'R' then
+	    logd("---R----")
+	    delay = L1:read(tonumber(addr, 16))
+	    logd("---R----")
+	 end
+	 logd('delay', delay)
       end
-      logd('delay', delay)
    end
 end
+
+local BUFSIZE = 2^15		-- 32K
+local f = io.input(arg[1])	-- open input file
+
+while true do
+   local lines, rest = f:read(BUFSIZE, "*line")
+   if not lines then break end
+   if rest then lines = lines .. rest .. "\n" end
+
+   assert(loadstring(lines))()
+end
+
+-- for line in f:lines() do
+--    if line:sub(1,2) ~= '--' then
+--       local rw, addr, cid = string.match(line, "(%a) 0x(%x+) (%d)")
+--       local delay = 0
+--       -- print(rw, addr, cid)
+--       local L1 = l1_cache_list[tonumber(cid)]
+--       if rw == 'W' then
+--       	 logd("---W----")
+-- 	 delay = L1:write(tonumber(addr, 16))
+-- 	 logd("---W----")
+--       elseif rw == 'R' then
+--       	 logd("---R----")
+-- 	 delay = L1:read(tonumber(addr, 16))
+-- 	 logd("---R----")
+--       end
+--       logd('delay', delay)
+--    end
+-- end
+
 
 function summarize(cache_list)
    local read_hit_total, read_miss_total, write_hit_total, write_miss_total = 0,0,0,0
